@@ -1,0 +1,842 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Container, 
+  Box, 
+  Typography, 
+  Paper, 
+  Tabs, 
+  Tab,
+  CircularProgress
+} from '@mui/material';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+
+// Import components
+import FileUpload from './components/FileUpload';
+import QueryInput from './components/QueryInput';
+import ResultDisplay from './components/ResultDisplay';
+import FileList from './components/FileList';
+
+// Create dark metallic theme
+const theme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: {
+      main: '#7b68ee', // Metallic purple
+    },
+    secondary: {
+      main: '#9370db', // Medium purple
+    },
+    background: {
+      default: '#121212', // Dark background
+      paper: '#1e1e1e',   // Slightly lighter dark for cards
+    },
+    text: {
+      primary: '#e0e0e0',
+      secondary: '#a0a0a0',
+    },
+  },
+  components: {
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'linear-gradient(145deg, #1e1e1e, #2d2d2d)',
+          borderRadius: 10,
+          border: '1px solid #3d3d3d',
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+        },
+        containedPrimary: {
+          background: 'linear-gradient(45deg, #7b68ee 30%, #9370db 90%)',
+          boxShadow: '0 3px 5px 2px rgba(123, 104, 238, .3)',
+        },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            '& fieldset': {
+              borderColor: '#3d3d3d',
+            },
+            '&:hover fieldset': {
+              borderColor: '#7b68ee',
+            },
+          },
+        },
+      },
+    },
+  },
+  typography: {
+    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    h1: {
+      fontWeight: 700,
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+      color: '#9370db',
+    },
+    h3: {
+      fontWeight: 700,
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+      color: '#9370db',
+    },
+  },
+});
+
+function App() {
+  // State
+  const [sessionId, setSessionId] = useState('');
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [queryResult, setQueryResult] = useState(null);
+  const [isQuerying, setIsQuerying] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+  const [querySource, setQuerySource] = useState('both'); // 'uploaded', 'online', or 'both'
+
+  // Initialize session
+  useEffect(() => {
+    // Generate a random session ID if not already set
+    if (!sessionId) {
+      const newSessionId = Math.random().toString(36).substring(2, 15);
+      setSessionId(newSessionId);
+      
+      // Store in localStorage to persist across page refreshes
+      localStorage.setItem('researchAssistantSessionId', newSessionId);
+    }
+    
+    // Clean up on unmount
+    return () => {
+      // Optional: clear session on unmount
+      // clearSession();
+    };
+  }, [sessionId]);
+
+  // Load session from localStorage
+  useEffect(() => {
+    const storedSessionId = localStorage.getItem('researchAssistantSessionId');
+    if (storedSessionId) {
+      setSessionId(storedSessionId);
+      
+      // Fetch uploaded files for this session
+      fetchUploadedFiles(storedSessionId);
+    }
+  }, []);
+
+  // Fetch uploaded files
+  const fetchUploadedFiles = async (sid) => {
+    try {
+      const response = await fetch(`http://localhost:8000/files?session_id=${sid}`);
+      const data = await response.json();
+      
+      console.log("Fetched files:", data);
+      
+      if (data.files) {
+        setUploadedFiles(data.files);
+      }
+    } catch (error) {
+      console.error('Error fetching files:', error);
+    }
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (file) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          const newProgress = prev + 10;
+          return newProgress >= 90 ? 90 : newProgress;
+        });
+      }, 300);
+      
+      const response = await fetch(`http://localhost:8000/upload?session_id=${sessionId}`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      
+      const data = await response.json();
+      
+      // Refresh file list
+      fetchUploadedFiles(sessionId);
+      
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+      }, 500);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  // Handle query submission
+  const handleQuerySubmit = async (query) => {
+    setIsQuerying(true);
+    setQueryResult(null);
+    
+    const formData = new FormData();
+    formData.append('query', query);
+    formData.append('source', querySource);
+    
+    try {
+      const response = await fetch(`/query?session_id=${sessionId}`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const data = await response.json();
+      setQueryResult(data);
+    } catch (error) {
+      console.error('Error submitting query:', error);
+      setQueryResult({
+        error: 'An error occurred while processing your query. Please try again.'
+      });
+    } finally {
+      setIsQuerying(false);
+    }
+  };
+
+  // Handle tab change
+  const handleTabChange = (event, newValue) => {
+    setActiveTab(newValue);
+    
+    // Set query source based on tab
+    if (newValue === 0) {
+      setQuerySource('both');
+    } else if (newValue === 1) {
+      setQuerySource('uploaded');
+    } else if (newValue === 2) {
+      setQuerySource('online');
+    }
+  };
+
+  // Clear session
+  const clearSession = async () => {
+    try {
+      await fetch(`/session?session_id=${sessionId}`, {
+        method: 'DELETE',
+      });
+      
+      setUploadedFiles([]);
+      setQueryResult(null);
+      
+      // Generate a new session ID
+      const newSessionId = Math.random().toString(36).substring(2, 15);
+      setSessionId(newSessionId);
+      localStorage.setItem('researchAssistantSessionId', newSessionId);
+    } catch (error) {
+      console.error('Error clearing session:', error);
+    }
+  };
+
+  // State for chat history - don't persist between sessions
+  const [chatHistory, setChatHistory] = useState([]);
+  
+  // Add message to chat
+  const addMessageToChat = (role, content) => {
+    const newMessage = {
+      role,
+      content,
+      timestamp: new Date().toISOString()
+    };
+    
+    const updatedHistory = [...chatHistory, newMessage];
+    setChatHistory(updatedHistory);
+    // Don't save to localStorage to avoid persistence between sessions
+  };
+  
+  // Handle query submission with chat history
+  const handleChatQuerySubmit = async (query) => {
+    // Check if we're in "Documents Only" mode and have no documents
+    if (activeTab === 1 && (!uploadedFiles || uploadedFiles.length === 0)) {
+      addMessageToChat('system', "Please upload a document first to use 'Documents Only' mode.");
+      return;
+    }
+    
+    // Add user message to chat
+    addMessageToChat('user', query);
+    
+    setIsQuerying(true);
+    
+    const formData = new FormData();
+    formData.append('query', query);
+    formData.append('source', querySource);
+    
+    // Add previous messages for context
+    if (chatHistory.length > 0) {
+      formData.append('previous_messages', JSON.stringify(chatHistory));
+    }
+    
+    try {
+      const response = await fetch(`/query?session_id=${sessionId}`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setQueryResult(data);
+      
+      // Add assistant response to chat
+      addMessageToChat('assistant', data.answer || "I'm sorry, I couldn't generate an answer.");
+      
+    } catch (error) {
+      console.error('Error submitting query:', error);
+      addMessageToChat('assistant', "I'm sorry, I encountered an error while processing your request. Please try again.");
+    } finally {
+      setIsQuerying(false);
+    }
+  };
+  
+  // Add welcome message if chat is empty
+  useEffect(() => {
+    if (chatHistory.length === 0) {
+      addMessageToChat('assistant', "Hello! I'm your research assistant. You can upload documents and ask me questions about them, or ask about any research topic. How can I help you today?");
+    }
+  }, []);
+  
+  // Add system message when file is uploaded
+  const handleFileUploadWithMessage = async (file) => {
+    await handleFileUpload(file);
+    addMessageToChat('system', `File "${file.name}" uploaded successfully. You can now ask questions about this document.`);
+  };
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Box sx={{ 
+        height: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column',
+        background: 'linear-gradient(135deg, #121212 0%, #1a1a1a 100%)',
+        overflow: 'hidden'
+      }}>
+        {/* Header with gradient */}
+        <Box sx={{ 
+          py: 2, 
+          borderBottom: '1px solid #3d3d3d',
+          background: 'linear-gradient(90deg, rgba(123,104,238,0.15) 0%, rgba(147,112,219,0.15) 100%)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
+        }}>
+          <Container maxWidth="xl">
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Typography 
+                variant="h3" 
+                component="h1" 
+                align="center"
+                sx={{ 
+                  fontWeight: 700,
+                  letterSpacing: '1px',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                  background: 'linear-gradient(45deg, #7b68ee 30%, #9370db 90%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent'
+                }}
+              >
+                Research Assistant
+              </Typography>
+            </Box>
+          </Container>
+        </Box>
+        
+        {/* Main content */}
+        <Container maxWidth="xl" sx={{ flex: 1, py: 3, overflow: 'hidden' }}>
+          <Box sx={{ 
+            display: 'grid', 
+            gridTemplateColumns: { xs: '1fr', md: '280px 1fr' }, 
+            gap: 3, 
+            height: '100%',
+            overflow: 'hidden'
+          }}>
+            {/* Sidebar */}
+            <Paper 
+              elevation={3} 
+              sx={{ 
+                p: 2, 
+                display: 'flex', 
+                flexDirection: 'column', 
+                height: '100%', 
+                overflow: 'hidden',
+                borderRadius: 3,
+                border: '1px solid #3d3d3d',
+                background: 'linear-gradient(145deg, #1e1e1e, #2d2d2d)',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)'
+              }}
+            >
+              <Typography 
+                variant="h6" 
+                component="h2" 
+                gutterBottom
+                sx={{ 
+                  color: 'primary.main',
+                  borderBottom: '1px solid #3d3d3d',
+                  pb: 1,
+                  fontWeight: 600
+                }}
+              >
+                Documents
+              </Typography>
+              
+              <FileUpload 
+                onUpload={handleFileUploadWithMessage} 
+                isUploading={isUploading} 
+                progress={uploadProgress} 
+              />
+              
+              <Box sx={{ mt: 2, flex: 1, overflow: 'auto' }}>
+                {uploadedFiles && uploadedFiles.length > 0 ? (
+                  <FileList files={uploadedFiles} />
+                ) : (
+                  <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 2 }}>
+                    No documents uploaded yet
+                  </Typography>
+                )}
+              </Box>
+            </Paper>
+            
+            {/* Main Content */}
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              height: '100%', 
+              overflow: 'hidden',
+              gap: 2
+            }}>
+              {/* Chat Container */}
+              <Paper 
+                elevation={3} 
+                sx={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  flex: 1,
+                  overflow: 'hidden',
+                  borderRadius: 3,
+                  border: '1px solid #3d3d3d',
+                  background: 'linear-gradient(145deg, #1e1e1e, #2d2d2d)',
+                  boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)'
+                }}
+              >
+                {/* Tabs */}
+                <Box sx={{ 
+                  px: 2, 
+                  pt: 2, 
+                  borderBottom: '1px solid #3d3d3d',
+                  background: 'rgba(0,0,0,0.2)'
+                }}>
+                  <Tabs 
+                    value={activeTab} 
+                    onChange={handleTabChange} 
+                    variant="fullWidth"
+                    sx={{ 
+                      '& .MuiTabs-indicator': {
+                        backgroundColor: 'primary.main',
+                        height: 3,
+                      },
+                      '& .MuiTab-root': {
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        textTransform: 'none',
+                        minHeight: 48,
+                        transition: 'all 0.2s',
+                        '&.Mui-selected': {
+                          color: 'primary.main',
+                        },
+                      }
+                    }}
+                  >
+                    <Tab label="All Sources" />
+                    <Tab label="Documents Only" />
+                    <Tab label="Online Literature" />
+                  </Tabs>
+                </Box>
+                
+                {/* Chat Messages */}
+                <Box sx={{ 
+                  flex: 1, 
+                  display: 'flex',
+                  flexDirection: 'column',
+                  p: 2,
+                  overflow: 'hidden'
+                }}>
+                  <Box sx={{ 
+                    flex: 1, 
+                    overflow: 'auto', 
+                    mb: 2, 
+                    p: 2, 
+                    bgcolor: 'rgba(0,0,0,0.2)', 
+                    borderRadius: 2,
+                    border: '1px solid #3d3d3d',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    {chatHistory.map((message, index) => (
+                      <Box 
+                        key={index}
+                        sx={{
+                          maxWidth: message.role === 'system' ? '100%' : '75%',
+                          mb: 2,
+                          p: 2,
+                          borderRadius: 2,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          ...(message.role === 'user' ? {
+                            alignSelf: 'flex-end',
+                            bgcolor: 'primary.main',
+                            color: 'white',
+                            ml: 'auto',
+                            borderBottomRightRadius: 0,
+                            boxShadow: '0 2px 10px rgba(123, 104, 238, 0.3)'
+                          } : message.role === 'system' ? {
+                            alignSelf: 'center',
+                            bgcolor: 'rgba(0,0,0,0.3)',
+                            color: 'text.secondary',
+                            mx: 'auto',
+                            fontSize: '0.9rem',
+                            border: '1px dashed #3d3d3d',
+                            px: 3,
+                            py: 1,
+                            maxWidth: '90%'
+                          } : {
+                            alignSelf: 'flex-start',
+                            bgcolor: 'background.paper',
+                            color: 'text.primary',
+                            mr: 'auto',
+                            borderBottomLeftRadius: 0,
+                            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)'
+                          })
+                        }}
+                      >
+                        {message.role === 'user' && (
+                          <Typography 
+                            variant="caption" 
+                            sx={{ 
+                              alignSelf: 'flex-end', 
+                              mb: 1, 
+                              fontWeight: 600,
+                              color: 'rgba(255,255,255,0.7)'
+                            }}
+                          >
+                            You
+                          </Typography>
+                        )}
+                        
+                        {message.role === 'assistant' && (
+                          <Typography 
+                            variant="caption" 
+                            sx={{ 
+                              alignSelf: 'flex-start', 
+                              mb: 1, 
+                              fontWeight: 600,
+                              color: 'primary.main'
+                            }}
+                          >
+                            Research Assistant
+                          </Typography>
+                        )}
+                        
+                        <Typography 
+                          variant="body1" 
+                          sx={{ 
+                            whiteSpace: 'pre-wrap',
+                            '& a': {
+                              color: message.role === 'user' ? 'white' : 'secondary.main',
+                              textDecoration: 'underline',
+                              '&:hover': {
+                                opacity: 0.8
+                              }
+                            },
+                            '& code': {
+                              backgroundColor: 'rgba(0,0,0,0.2)',
+                              padding: '2px 4px',
+                              borderRadius: 1,
+                              fontFamily: '"JetBrains Mono", monospace',
+                              fontSize: '0.9em'
+                            }
+                          }}
+                        >
+                          {message.content}
+                        </Typography>
+                        
+                        <Typography 
+                          variant="caption" 
+                          color={message.role === 'user' ? 'rgba(255,255,255,0.7)' : 'text.secondary'} 
+                          sx={{ 
+                            display: 'block', 
+                            textAlign: 'right', 
+                            mt: 1,
+                            fontSize: '0.75rem'
+                          }}
+                        >
+                          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                      </Box>
+                    ))}
+                    
+                    {isQuerying && (
+                      <Box 
+                        sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          mb: 2,
+                          p: 2,
+                          maxWidth: '75%',
+                          borderRadius: 2,
+                          bgcolor: 'background.paper',
+                          alignSelf: 'flex-start',
+                          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)'
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ mr: 1, color: 'primary.main', fontWeight: 600 }}>
+                          Research Assistant is thinking
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Box 
+                            sx={{ 
+                              width: 8, 
+                              height: 8, 
+                              borderRadius: '50%', 
+                              bgcolor: 'primary.main',
+                              animation: 'pulse 1.5s infinite ease-in-out',
+                              animationDelay: '0s',
+                              mr: 0.5,
+                              '@keyframes pulse': {
+                                '0%, 100%': {
+                                  transform: 'scale(1)',
+                                  opacity: 0.5
+                                },
+                                '50%': {
+                                  transform: 'scale(1.2)',
+                                  opacity: 1
+                                }
+                              }
+                            }} 
+                          />
+                          <Box 
+                            sx={{ 
+                              width: 8, 
+                              height: 8, 
+                              borderRadius: '50%', 
+                              bgcolor: 'primary.main',
+                              animation: 'pulse 1.5s infinite ease-in-out',
+                              animationDelay: '0.3s',
+                              mr: 0.5
+                            }} 
+                          />
+                          <Box 
+                            sx={{ 
+                              width: 8, 
+                              height: 8, 
+                              borderRadius: '50%', 
+                              bgcolor: 'primary.main',
+                              animation: 'pulse 1.5s infinite ease-in-out',
+                              animationDelay: '0.6s'
+                            }} 
+                          />
+                        </Box>
+                      </Box>
+                    )}
+                  </Box>
+                  
+                  {/* Query Input */}
+                  <Box sx={{ 
+                    display: 'flex', 
+                    bgcolor: 'rgba(0,0,0,0.2)', 
+                    p: 2, 
+                    borderRadius: 2,
+                    border: '1px solid #3d3d3d'
+                  }}>
+                    <QueryInput 
+                      onSubmit={handleChatQuerySubmit} 
+                      disabled={isQuerying}
+                      placeholder="Ask a question about your documents or any research topic..."
+                      fullWidth
+                    />
+                  </Box>
+                </Box>
+              </Paper>
+              
+              {/* Sources Panel */}
+              {queryResult && (
+                <Paper 
+                  elevation={3} 
+                  sx={{ 
+                    p: 2, 
+                    maxHeight: '250px', 
+                    overflow: 'auto',
+                    borderRadius: 3,
+                    border: '1px solid #3d3d3d',
+                    background: 'linear-gradient(145deg, #1e1e1e, #2d2d2d)',
+                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)'
+                  }}
+                >
+                  <Typography 
+                    variant="h6" 
+                    gutterBottom
+                    sx={{ 
+                      color: 'primary.main',
+                      borderBottom: '1px solid #3d3d3d',
+                      pb: 1,
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Box 
+                      component="span" 
+                      sx={{ 
+                        width: 10, 
+                        height: 10, 
+                        borderRadius: '50%', 
+                        bgcolor: 'primary.main',
+                        display: 'inline-block',
+                        mr: 1
+                      }} 
+                    />
+                    Sources
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {queryResult.uploaded_documents && queryResult.uploaded_documents.length > 0 && (
+                      <Box>
+                        <Typography 
+                          variant="subtitle2" 
+                          color="primary.main" 
+                          gutterBottom
+                          sx={{ fontWeight: 600 }}
+                        >
+                          From Your Documents
+                        </Typography>
+                        
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          {queryResult.uploaded_documents.map((doc, index) => {
+                            const source = doc.metadata?.source || "Unknown";
+                            const page = doc.metadata?.page ? ` (Page ${doc.metadata.page})` : '';
+                            const score = Math.round((doc.score || 0) * 100);
+                            
+                            return (
+                              <Paper 
+                                key={index} 
+                                sx={{ 
+                                  p: 2, 
+                                  bgcolor: 'rgba(0,0,0,0.2)',
+                                  borderRadius: 2,
+                                  border: '1px solid #3d3d3d'
+                                }}
+                              >
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  justifyContent: 'space-between', 
+                                  mb: 1, 
+                                  pb: 1, 
+                                  borderBottom: '1px solid #3d3d3d' 
+                                }}>
+                                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                    {source}{page}
+                                  </Typography>
+                                  <Typography 
+                                    variant="body2" 
+                                    sx={{ 
+                                      color: score > 80 ? '#4caf50' : score > 50 ? '#ff9800' : 'text.secondary',
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    Relevance: {score}%
+                                  </Typography>
+                                </Box>
+                                <Typography variant="body2" color="text.secondary">
+                                  {doc.content?.length > 200 ? doc.content.substring(0, 200) + '...' : doc.content || "No content"}
+                                </Typography>
+                              </Paper>
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    )}
+                    
+                    {queryResult.online_papers && queryResult.online_papers.length > 0 && (
+                      <Box sx={{ mt: queryResult.uploaded_documents?.length > 0 ? 2 : 0 }}>
+                        <Typography 
+                          variant="subtitle2" 
+                          color="primary.main" 
+                          gutterBottom
+                          sx={{ fontWeight: 600 }}
+                        >
+                          From Online Literature
+                        </Typography>
+                        
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          {queryResult.online_papers.map((paper, index) => {
+                            const authors = paper.authors?.join(', ') || "Unknown authors";
+                            
+                            return (
+                              <Paper 
+                                key={index} 
+                                sx={{ 
+                                  p: 2, 
+                                  bgcolor: 'rgba(0,0,0,0.2)',
+                                  borderRadius: 2,
+                                  border: '1px solid #3d3d3d'
+                                }}
+                              >
+                                <Box sx={{ mb: 1 }}>
+                                  <Typography 
+                                    variant="body2" 
+                                    component="a" 
+                                    href={paper.url || '#'} 
+                                    target="_blank"
+                                    sx={{ 
+                                      color: 'secondary.main', 
+                                      textDecoration: 'none',
+                                      fontWeight: 'bold',
+                                      '&:hover': {
+                                        textDecoration: 'underline'
+                                      }
+                                    }}
+                                  >
+                                    {paper.title || "Untitled"}
+                                  </Typography>
+                                </Box>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  {authors} • {paper.published || "Unknown date"} • {paper.source || "Unknown source"}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  {paper.summary?.length > 150 ? paper.summary.substring(0, 150) + '...' : paper.summary || "No summary available"}
+                                </Typography>
+                              </Paper>
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    )}
+                  </Box>
+                </Paper>
+              )}
+            </Box>
+          </Box>
+        </Container>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
+export default App;
